@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "Creem Expo Example",
+    "slug": "expo-creem-example",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "creemexample",
+    "userInterfaceStyle": "automatic",
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.creem.example"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#007AFF"
+      },
+      "package": "com.creem.example"
+    },
+    "web": {},
+    "plugins": [
+      ["expo-creem", { "scheme": "creemexample" }]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": ""
+      }
+    }
+  }
+}
