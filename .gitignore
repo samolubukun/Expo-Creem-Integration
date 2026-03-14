@@ -42,3 +42,6 @@ build/
 
 # TypeScript
 *.tsbuildinfo
+
+# Guide (internal doc)
+CREEM-EXPO-INTEGRATION-GUIDE.md

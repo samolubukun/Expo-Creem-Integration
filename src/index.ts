@@ -12,6 +12,9 @@ export {
   validateApiKey,
 } from './utils/client';
 
+// Core launcher
+export { launchCheckoutSession } from './launcher';
+
 // Context / Provider
 export {
   CreemProvider,
