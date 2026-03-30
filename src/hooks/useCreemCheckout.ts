@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import * as Linking from 'expo-linking';
 import { useCreemClient } from '../utils/context';
 import { launchCheckout, buildCallbackUrl } from '../utils/client';
@@ -53,13 +53,13 @@ export function useCreemCheckout(
     onComplete,
     onCancel,
     onError,
+    autoCloseDelay,
   } = options;
 
   const startCheckout = useCallback(async () => {
     setState((prev) => ({ ...prev, status: 'loading', error: null }));
 
     try {
-      // Build fallback deep-link URLs in case the caller didn't supply them.
       const successCallbackUrl = success_url || buildCallbackUrl('creem/success');
       const redirectUrl = Linking.createURL('creem/callback');
 
@@ -77,6 +77,9 @@ export function useCreemCheckout(
       const result: CheckoutResult = await launchCheckout(session, redirectUrl);
 
       if (result.status === 'completed') {
+        if (autoCloseDelay && autoCloseDelay > 0) {
+          await new Promise((resolve) => setTimeout(resolve, autoCloseDelay));
+        }
         setState({ status: 'success', session, error: null });
         onComplete?.(session);
       } else if (result.status === 'canceled') {
@@ -108,6 +111,7 @@ export function useCreemCheckout(
     onComplete,
     onCancel,
     onError,
+    autoCloseDelay,
   ]);
 
   const reset = useCallback(() => {
@@ -135,56 +139,64 @@ export function useCreemCheckoutWithDeeplink(
     error: null,
   });
 
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+
   // Listen for deep-link callbacks from the Creem checkout page.
   useEffect(() => {
     const handleUrl = (url: string) => {
-      const parsed = new URL(url);
-      const path = parsed.pathname;
-      const params = parsed.searchParams;
+      try {
+        const parsed = new URL(url);
+        const path = parsed.pathname;
+        const params = parsed.searchParams;
 
-      if (path.includes('success') || params.get('status') === 'completed') {
-        const checkoutId = params.get('checkout_id');
-        if (checkoutId) {
-          client
-            .getCheckoutSession(checkoutId)
-            .then((session) => {
-              setState({ status: 'success', session, error: null });
-              options.onComplete?.(session);
-            })
-            .catch((err: CreemError) => {
-              setState({ status: 'error', session: null, error: err });
-              options.onError?.(err);
-            });
-        } else {
-          setState({ status: 'success', session: null, error: null });
+        if (path.includes('success') || params.get('status') === 'completed') {
+          const checkoutId = params.get('checkout_id');
+          if (checkoutId) {
+            client
+              .getCheckoutSession(checkoutId)
+              .then((session) => {
+                setState({ status: 'success', session, error: null });
+                optionsRef.current.onComplete?.(session);
+              })
+              .catch((err: CreemError) => {
+                setState({ status: 'error', session: null, error: err });
+                optionsRef.current.onError?.(err);
+              });
+          } else {
+            setState({ status: 'success', session: null, error: null });
+          }
+        } else if (
+          path.includes('cancel') ||
+          params.get('status') === 'canceled'
+        ) {
+          setState({ status: 'canceled', session: null, error: null });
+          optionsRef.current.onCancel?.();
         }
-      } else if (
-        path.includes('cancel') ||
-        params.get('status') === 'canceled'
-      ) {
-        setState({ status: 'canceled', session: null, error: null });
-        options.onCancel?.();
+      } catch {
+        // ignore malformed URLs
       }
     };
 
     const sub = Linking.addEventListener('url', ({ url }) => handleUrl(url));
     return () => sub.remove();
-  }, [client, options]);
+  }, [client]);
 
   const startCheckout = useCallback(async () => {
     setState((prev) => ({ ...prev, status: 'loading', error: null }));
 
     try {
       const redirectUrl = Linking.createURL('creem/callback');
+      const currentOptions = optionsRef.current;
       const session = await client.createCheckoutSession({
-        product_id: options.product_id,
-        request_id: options.request_id,
-        units: options.units,
-        discount_code: options.discount_code,
-        customer: options.customer,
-        custom_fields: options.custom_fields,
-        success_url: options.success_url || buildCallbackUrl('creem/success'),
-        metadata: options.metadata,
+        product_id: currentOptions.product_id,
+        request_id: currentOptions.request_id,
+        units: currentOptions.units,
+        discount_code: currentOptions.discount_code,
+        customer: currentOptions.customer,
+        custom_fields: currentOptions.custom_fields,
+        success_url: currentOptions.success_url || buildCallbackUrl('creem/success'),
+        metadata: currentOptions.metadata,
       });
 
       // Fire and forget — result comes via the deep-link listener above.
@@ -192,9 +204,9 @@ export function useCreemCheckoutWithDeeplink(
     } catch (err) {
       const error = err as CreemError;
       setState({ status: 'error', session: null, error });
-      options.onError?.(error);
+      optionsRef.current.onError?.(error);
     }
-  }, [client, options]);
+  }, [client]);
 
   const reset = useCallback(() => {
     setState({ status: 'idle', session: null, error: null });

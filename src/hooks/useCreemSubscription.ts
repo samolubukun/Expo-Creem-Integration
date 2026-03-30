@@ -6,6 +6,8 @@ import {
   SubscriptionStatus,
   UseCreemSubscriptionOptions,
   CreemCancelSubscriptionOptions,
+  CreemUpdateSubscriptionOptions,
+  CreemUpgradeSubscriptionOptions,
 } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -23,25 +25,22 @@ interface SubscriptionState {
 export interface UseCreemSubscriptionReturn extends SubscriptionState {
   refetch: () => Promise<void>;
   cancelSubscription: (options?: CreemCancelSubscriptionOptions) => Promise<void>;
+  updateSubscription: (options: CreemUpdateSubscriptionOptions) => Promise<void>;
+  upgradeSubscription: (options: CreemUpgradeSubscriptionOptions) => Promise<void>;
+  pauseSubscription: () => Promise<void>;
+  resumeSubscription: () => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
 // useCreemSubscription
 // ---------------------------------------------------------------------------
 
-/**
- * Fetches a subscription by ID and optionally polls for status changes.
- *
- * @param subscriptionId  The Creem subscription ID (e.g. `sub_xxx`), or null
- *                        to skip fetching.
- * @param options         Optional poll interval and status-change callback.
- */
 export function useCreemSubscription(
   subscriptionId: string | null,
   options: UseCreemSubscriptionOptions = {}
 ): UseCreemSubscriptionReturn {
   const client = useCreemClient();
-  const { pollInterval = 0, onStatusChange } = options;
+  const { pollInterval = 0, onStatusChange, enabled = true } = options;
 
   const [state, setState] = useState<SubscriptionState>({
     subscription: null,
@@ -53,12 +52,11 @@ export function useCreemSubscription(
 
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isMountedRef = useRef(true);
+  const onStatusChangeRef = useRef(onStatusChange);
+  onStatusChangeRef.current = onStatusChange;
 
-  // ---------------------------------------------------------------------------
-  // Fetch
-  // ---------------------------------------------------------------------------
   const fetchSubscription = useCallback(async () => {
-    if (!subscriptionId) return;
+    if (!subscriptionId || !enabled) return;
 
     try {
       const subscription = await client.getSubscription(subscriptionId);
@@ -66,7 +64,7 @@ export function useCreemSubscription(
       if (isMountedRef.current) {
         setState((prev) => {
           if (prev.status !== subscription.status) {
-            onStatusChange?.(subscription.status);
+            onStatusChangeRef.current?.(subscription.status);
           }
           return {
             subscription,
@@ -86,11 +84,8 @@ export function useCreemSubscription(
         }));
       }
     }
-  }, [client, subscriptionId, onStatusChange]);
+  }, [client, subscriptionId, enabled]);
 
-  // ---------------------------------------------------------------------------
-  // Cancel
-  // ---------------------------------------------------------------------------
   const cancelSubscription = useCallback(
     async (cancelOptions?: CreemCancelSubscriptionOptions) => {
       if (!subscriptionId) return;
@@ -111,7 +106,7 @@ export function useCreemSubscription(
             error: null,
             lastUpdated: new Date(),
           });
-          onStatusChange?.(subscription.status);
+          onStatusChangeRef.current?.(subscription.status);
         }
       } catch (err) {
         if (isMountedRef.current) {
@@ -123,16 +118,142 @@ export function useCreemSubscription(
         }
       }
     },
-    [client, subscriptionId, onStatusChange]
+    [client, subscriptionId]
   );
 
-  // ---------------------------------------------------------------------------
+  const updateSubscription = useCallback(
+    async (updateOptions: CreemUpdateSubscriptionOptions) => {
+      if (!subscriptionId) return;
+
+      setState((prev) => ({ ...prev, isLoading: true, error: null }));
+
+      try {
+        const subscription = await client.updateSubscription(
+          subscriptionId,
+          updateOptions
+        );
+
+        if (isMountedRef.current) {
+          setState({
+            subscription,
+            status: subscription.status,
+            isLoading: false,
+            error: null,
+            lastUpdated: new Date(),
+          });
+          onStatusChangeRef.current?.(subscription.status);
+        }
+      } catch (err) {
+        if (isMountedRef.current) {
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            error: err as CreemError,
+          }));
+        }
+      }
+    },
+    [client, subscriptionId]
+  );
+
+  const upgradeSubscription = useCallback(
+    async (upgradeOptions: CreemUpgradeSubscriptionOptions) => {
+      if (!subscriptionId) return;
+
+      setState((prev) => ({ ...prev, isLoading: true, error: null }));
+
+      try {
+        const subscription = await client.upgradeSubscription(
+          subscriptionId,
+          upgradeOptions
+        );
+
+        if (isMountedRef.current) {
+          setState({
+            subscription,
+            status: subscription.status,
+            isLoading: false,
+            error: null,
+            lastUpdated: new Date(),
+          });
+          onStatusChangeRef.current?.(subscription.status);
+        }
+      } catch (err) {
+        if (isMountedRef.current) {
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            error: err as CreemError,
+          }));
+        }
+      }
+    },
+    [client, subscriptionId]
+  );
+
+  const pauseSubscription = useCallback(async () => {
+    if (!subscriptionId) return;
+
+    setState((prev) => ({ ...prev, isLoading: true, error: null }));
+
+    try {
+      const subscription = await client.pauseSubscription(subscriptionId);
+
+      if (isMountedRef.current) {
+        setState({
+          subscription,
+          status: subscription.status,
+          isLoading: false,
+          error: null,
+          lastUpdated: new Date(),
+        });
+        onStatusChangeRef.current?.(subscription.status);
+      }
+    } catch (err) {
+      if (isMountedRef.current) {
+        setState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: err as CreemError,
+        }));
+      }
+    }
+  }, [client, subscriptionId]);
+
+  const resumeSubscription = useCallback(async () => {
+    if (!subscriptionId) return;
+
+    setState((prev) => ({ ...prev, isLoading: true, error: null }));
+
+    try {
+      const subscription = await client.resumeSubscription(subscriptionId);
+
+      if (isMountedRef.current) {
+        setState({
+          subscription,
+          status: subscription.status,
+          isLoading: false,
+          error: null,
+          lastUpdated: new Date(),
+        });
+        onStatusChangeRef.current?.(subscription.status);
+      }
+    } catch (err) {
+      if (isMountedRef.current) {
+        setState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: err as CreemError,
+        }));
+      }
+    }
+  }, [client, subscriptionId]);
+
   // Mount effect — initial fetch
-  // ---------------------------------------------------------------------------
   useEffect(() => {
     isMountedRef.current = true;
 
-    if (subscriptionId) {
+    if (subscriptionId && enabled) {
       setState((prev) => ({ ...prev, isLoading: true }));
       fetchSubscription();
     }
@@ -140,13 +261,11 @@ export function useCreemSubscription(
     return () => {
       isMountedRef.current = false;
     };
-  }, [subscriptionId, fetchSubscription]);
+  }, [subscriptionId, fetchSubscription, enabled]);
 
-  // ---------------------------------------------------------------------------
   // Polling effect
-  // ---------------------------------------------------------------------------
   useEffect(() => {
-    if (pollInterval > 0 && subscriptionId) {
+    if (pollInterval > 0 && subscriptionId && enabled) {
       pollIntervalRef.current = setInterval(fetchSubscription, pollInterval);
     }
     return () => {
@@ -155,12 +274,16 @@ export function useCreemSubscription(
         pollIntervalRef.current = null;
       }
     };
-  }, [pollInterval, fetchSubscription, subscriptionId]);
+  }, [pollInterval, fetchSubscription, subscriptionId, enabled]);
 
   return {
     ...state,
     refetch: fetchSubscription,
     cancelSubscription,
+    updateSubscription,
+    upgradeSubscription,
+    pauseSubscription,
+    resumeSubscription,
   };
 }
 
@@ -168,10 +291,6 @@ export function useCreemSubscription(
 // useCreemSubscriptionStatus — convenience hook
 // ---------------------------------------------------------------------------
 
-/**
- * Returns only the subscription status string for a given subscription ID.
- * Useful when you just need to gate UI on active/canceled state.
- */
 export function useCreemSubscriptionStatus(
   subscriptionId: string | null,
   pollInterval = 0

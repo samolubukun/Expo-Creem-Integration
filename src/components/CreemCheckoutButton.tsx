@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   TouchableOpacity,
   Text,
@@ -21,7 +21,7 @@ interface CreemCheckoutButtonProps {
   size?: 'small' | 'medium' | 'large';
 }
 
-export function CreemCheckoutButton({
+export const CreemCheckoutButton = React.memo(function CreemCheckoutButton({
   options,
   title = 'Subscribe',
   loadingTitle,
@@ -45,40 +45,44 @@ export function CreemCheckoutButton({
   const variantButtonKey = `button_${variant}` as const;
   const sizeButtonKey = `button_${size}` as const;
 
-  const buttonStyles: ViewStyle[] = [
-    styles.button,
-    ...(variantButtonKey === 'button_primary'
-      ? [styles.button_primary]
-      : variantButtonKey === 'button_secondary'
-        ? [styles.button_secondary]
-        : [styles.button_outline]),
-    ...(sizeButtonKey === 'button_small'
-      ? [styles.button_small]
-      : sizeButtonKey === 'button_medium'
-        ? [styles.button_medium]
-        : [styles.button_large]),
-    ...(isDisabled ? [styles.button_disabled] : []),
-    ...(style ? [style] : []),
-  ];
+  const buttonStyles: ViewStyle[] = useMemo(
+    () => [
+      styles.button,
+      ...(variantButtonKey === 'button_primary'
+        ? [styles.button_primary]
+        : variantButtonKey === 'button_secondary'
+          ? [styles.button_secondary]
+          : [styles.button_outline]),
+      ...(sizeButtonKey === 'button_small'
+        ? [styles.button_small]
+        : sizeButtonKey === 'button_medium'
+          ? [styles.button_medium]
+          : [styles.button_large]),
+      ...(isDisabled ? [styles.button_disabled] : []),
+      ...(style ? [style] : []),
+    ],
+    [variantButtonKey, sizeButtonKey, isDisabled, style]
+  );
 
-  const variantTextKey = `text_${variant}` as const;
-  const sizeTextKey = `text_${size}` as const;
-
-  const textStyles: TextStyle[] = [
-    styles.text,
-    ...(variantTextKey === 'text_primary'
-      ? [styles.text_primary]
-      : variantTextKey === 'text_secondary'
-        ? [styles.text_secondary]
-        : [styles.text_outline]),
-    ...(sizeTextKey === 'text_small'
-      ? [styles.text_small]
-      : sizeTextKey === 'text_medium'
-        ? [styles.text_medium]
-        : [styles.text_large]),
-    ...(isDisabled ? [styles.text_disabled] : []),
-    ...(textStyle ? [textStyle] : []),
-  ];
+  const textStyles: TextStyle[] = useMemo(() => {
+    const variantTextKey = `text_${variant}` as const;
+    const sizeTextKey = `text_${size}` as const;
+    return [
+      styles.text,
+      ...(variantTextKey === 'text_primary'
+        ? [styles.text_primary]
+        : variantTextKey === 'text_secondary'
+          ? [styles.text_secondary]
+          : [styles.text_outline]),
+      ...(sizeTextKey === 'text_small'
+        ? [styles.text_small]
+        : sizeTextKey === 'text_medium'
+          ? [styles.text_medium]
+          : [styles.text_large]),
+      ...(isDisabled ? [styles.text_disabled] : []),
+      ...(textStyle ? [textStyle] : []),
+    ];
+  }, [variant, size, isDisabled, textStyle]);
 
   const indicatorColor = variant === 'outline' ? '#007AFF' : '#FFFFFF';
 
@@ -95,6 +99,7 @@ export function CreemCheckoutButton({
       activeOpacity={0.7}
       accessibilityRole="button"
       accessibilityLabel={title}
+      accessibilityState={{ busy: isLoading, disabled: isDisabled }}
     >
       {isLoading ? (
         <>
@@ -108,7 +113,7 @@ export function CreemCheckoutButton({
       )}
     </TouchableOpacity>
   );
-}
+});
 
 const styles = StyleSheet.create({
   button: {

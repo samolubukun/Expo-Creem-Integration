@@ -2,3 +2,9 @@ export { useCreemCheckout, useCreemCheckoutWithDeeplink } from './useCreemChecko
 export type { UseCreemCheckoutReturn } from './useCreemCheckout';
 export { useCreemSubscription, useCreemSubscriptionStatus } from './useCreemSubscription';
 export type { UseCreemSubscriptionReturn } from './useCreemSubscription';
+export { useCreemProducts } from './useCreemProducts';
+export type { UseCreemProductsReturn } from './useCreemProducts';
+export { useCreemLicense } from './useCreemLicense';
+export type { UseCreemLicenseReturn } from './useCreemLicense';
+export { useCreemCustomerPortal } from './useCreemCustomerPortal';
+export type { UseCreemCustomerPortalReturn } from './useCreemCustomerPortal';

@@ -24,16 +24,32 @@ export {
 } from './utils/context';
 export type { CreemContextValue } from './utils/context';
 
+// Utility helpers
+export {
+  formatPrice,
+  formatDate,
+  formatBillingPeriod,
+  formatRelativeTime,
+  getSubscriptionStatusLabel,
+  isSubscriptionActive,
+} from './utils/context';
+
 // Hooks
 export {
   useCreemCheckout,
   useCreemCheckoutWithDeeplink,
   useCreemSubscription,
   useCreemSubscriptionStatus,
+  useCreemProducts,
+  useCreemLicense,
+  useCreemCustomerPortal,
 } from './hooks';
 export type {
   UseCreemCheckoutReturn,
   UseCreemSubscriptionReturn,
+  UseCreemProductsReturn,
+  UseCreemLicenseReturn,
+  UseCreemCustomerPortalReturn,
 } from './hooks';
 
 // Components
@@ -48,5 +64,6 @@ export {
   CreemServerClient,
   validateWebhookSignature,
   parseWebhookEvent,
+  processWebhookEvent,
 } from './server';
-export type { CreemServerConfig } from './server';
+export type { CreemServerConfig, WebhookEventHandlers } from './server';

@@ -1,7 +1,7 @@
-import React from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import React, { useCallback } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useCreemSubscription } from '../hooks';
-import { SubscriptionStatus as SubscriptionStatusType } from '../types';
+import { SubscriptionStatus as SubscriptionStatusType, CreemSubscription } from '../types';
 
 interface SubscriptionStatusProps {
   subscriptionId: string | null;
@@ -11,18 +11,17 @@ interface SubscriptionStatusProps {
   renderLoading?: () => React.ReactNode;
   renderError?: (error: { code: string; message: string }) => React.ReactNode;
   renderInactive?: () => React.ReactNode;
-  renderActive?: (
-    subscription: NonNullable<
-      ReturnType<typeof useCreemSubscription>['subscription']
-    >
-  ) => React.ReactNode;
+  renderActive?: (subscription: CreemSubscription) => React.ReactNode;
+  renderPaused?: (subscription: CreemSubscription) => React.ReactNode;
+  renderTrialing?: (subscription: CreemSubscription) => React.ReactNode;
+  renderCanceling?: (subscription: CreemSubscription) => React.ReactNode;
 }
 
-// Matches the SubscriptionStatus union in types/index.ts exactly.
 const STATUS_LABELS: Record<SubscriptionStatusType, string> = {
   active: 'Active',
   canceled: 'Canceled',
   unpaid: 'Unpaid',
+  past_due: 'Past Due',
   paused: 'Paused',
   trialing: 'Trial',
   scheduled_cancel: 'Canceling',
@@ -32,15 +31,18 @@ const STATUS_COLORS: Record<SubscriptionStatusType, string> = {
   active: '#34C759',
   canceled: '#FF3B30',
   unpaid: '#FF3B30',
+  past_due: '#FF9500',
   paused: '#FF9500',
   trialing: '#5856D6',
   scheduled_cancel: '#FF9500',
 };
 
-/** The statuses we consider "inactive" — no active subscription to show. */
 const INACTIVE_STATUSES: SubscriptionStatusType[] = ['canceled', 'unpaid'];
+const TRIAL_STATUSES: SubscriptionStatusType[] = ['trialing'];
+const CANCELING_STATUSES: SubscriptionStatusType[] = ['scheduled_cancel'];
+const PAUSED_STATUSES: SubscriptionStatusType[] = ['paused'];
 
-export function SubscriptionStatus({
+export const SubscriptionStatus = React.memo(function SubscriptionStatus({
   subscriptionId,
   pollInterval = 0,
   showDetails = false,
@@ -49,6 +51,9 @@ export function SubscriptionStatus({
   renderError,
   renderInactive,
   renderActive,
+  renderPaused,
+  renderTrialing,
+  renderCanceling,
 }: SubscriptionStatusProps): React.JSX.Element {
   const { subscription, status, isLoading, error, refetch } =
     useCreemSubscription(subscriptionId, {
@@ -71,9 +76,9 @@ export function SubscriptionStatus({
     return (
       <View style={styles.container}>
         <Text style={styles.errorText}>Failed to load subscription</Text>
-        <Text style={styles.retryText} onPress={refetch}>
-          Tap to retry
-        </Text>
+        <TouchableOpacity onPress={refetch}>
+          <Text style={styles.retryText}>Tap to retry</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -87,9 +92,26 @@ export function SubscriptionStatus({
     );
   }
 
-  if (renderActive) return <>{renderActive(subscription)}</>;
+  // Trialing state
+  if (TRIAL_STATUSES.includes(status)) {
+    if (renderTrialing) return <>{renderTrialing(subscription)}</>;
+  }
+
+  // Canceling (scheduled) state
+  if (CANCELING_STATUSES.includes(status)) {
+    if (renderCanceling) return <>{renderCanceling(subscription)}</>;
+  }
+
+  // Paused state
+  if (PAUSED_STATUSES.includes(status)) {
+    if (renderPaused) return <>{renderPaused(subscription)}</>;
+  }
+
+  // Active state
+  if (renderActive && status === 'active') return <>{renderActive(subscription)}</>;
 
   const isScheduledCancel = status === 'scheduled_cancel';
+  const isPastDue = status === 'past_due';
 
   return (
     <View style={styles.container}>
@@ -108,19 +130,38 @@ export function SubscriptionStatus({
                 ? `Cancels on ${new Date(
                     subscription.current_period_end_date
                   ).toLocaleDateString()}`
-                : `Renews on ${new Date(
-                    subscription.current_period_end_date
-                  ).toLocaleDateString()}`}
+                : isPastDue
+                  ? `Payment due since ${new Date(
+                      subscription.current_period_end_date
+                    ).toLocaleDateString()}`
+                  : `Renews on ${new Date(
+                      subscription.current_period_end_date
+                    ).toLocaleDateString()}`}
+            </Text>
+          )}
+          {subscription.current_period_start_date && (
+            <Text style={styles.detailText}>
+              Started: {new Date(subscription.current_period_start_date).toLocaleDateString()}
             </Text>
           )}
           {typeof subscription.product === 'object' && subscription.product?.name && (
             <Text style={styles.productName}>{subscription.product.name}</Text>
           )}
+          {typeof subscription.product === 'object' &&
+            subscription.product?.billing_period && (
+              <Text style={styles.detailText}>
+                {subscription.product.billing_period === 'month'
+                  ? 'Monthly'
+                  : subscription.product.billing_period === 'year'
+                    ? 'Yearly'
+                    : subscription.product.billing_period}
+              </Text>
+            )}
         </View>
       )}
     </View>
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // SubscriptionBadge — compact status indicator
@@ -132,7 +173,7 @@ interface SubscriptionBadgeProps {
   showLabel?: boolean;
 }
 
-export function SubscriptionBadge({
+export const SubscriptionBadge = React.memo(function SubscriptionBadge({
   subscriptionId,
   pollInterval = 0,
   showLabel = true,
@@ -155,7 +196,7 @@ export function SubscriptionBadge({
       )}
     </View>
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // Styles

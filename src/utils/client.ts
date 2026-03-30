@@ -6,22 +6,92 @@ import {
   CreemCheckoutSession,
   CreemSubscription,
   CreemCancelSubscriptionOptions,
+  CreemUpdateSubscriptionOptions,
+  CreemUpgradeSubscriptionOptions,
   CreemError,
   CheckoutResult,
+  CreemCustomer,
+  CreemProduct,
+  CreemDiscount,
+  CreemTransaction,
+  CreemPaginatedResponse,
+  CreemActivateLicenseOptions,
+  CreemValidateLicenseOptions,
+  CreemDeactivateLicenseOptions,
+  CreemLicenseActivationResult,
+  CreemLicenseValidationResult,
+  CreemBillingPortalResult,
+  CreemCreateDiscountOptions,
+  CreemCreateProductOptions,
 } from '../types';
 
 const DEFAULT_BASE_URL = 'https://api.creem.io';
 const SANDBOX_BASE_URL = 'https://test-api.creem.io';
 
+// ---------------------------------------------------------------------------
+// Internal retry helper
+// ---------------------------------------------------------------------------
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  retries: number,
+  retryDelay: number,
+  customFetch: typeof fetch
+): Promise<Response> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await customFetch(url, options);
+
+      // Don't retry 4xx errors (client errors)
+      if (response.ok || (response.status >= 400 && response.status < 500)) {
+        return response;
+      }
+
+      // Retry 5xx errors
+      if (response.status >= 500 && attempt < retries) {
+        await sleep(retryDelay * Math.pow(2, attempt));
+        continue;
+      }
+
+      return response;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (attempt < retries) {
+        await sleep(retryDelay * Math.pow(2, attempt));
+        continue;
+      }
+    }
+  }
+
+  throw lastError || new Error('Request failed after retries');
+}
+
+// ---------------------------------------------------------------------------
+// CreemClient — full API coverage
+// ---------------------------------------------------------------------------
+
 export class CreemClient {
   private apiKey: string;
   private baseUrl: string;
+  private retries: number;
+  private retryDelay: number;
+  private customFetch: typeof fetch;
 
   constructor(config: CreemConfig) {
     this.apiKey = config.apiKey;
     this.baseUrl =
       config.baseUrl ||
       (config.environment === 'sandbox' ? SANDBOX_BASE_URL : DEFAULT_BASE_URL);
+    this.retries = config.retries ?? 2;
+    this.retryDelay = config.retryDelay ?? 300;
+    this.customFetch = config.customFetch ?? fetch;
   }
 
   private async request<T>(
@@ -35,7 +105,13 @@ export class CreemClient {
       ...(options.headers as Record<string, string>),
     };
 
-    const response = await fetch(url, { ...options, headers });
+    const response = await fetchWithRetry(
+      url,
+      { ...options, headers },
+      this.retries,
+      this.retryDelay,
+      this.customFetch
+    );
 
     if (!response.ok) {
       let errorBody: { message?: string } = {};
@@ -53,6 +129,11 @@ export class CreemClient {
       throw error;
     }
 
+    // Handle 204 No Content
+    if (response.status === 204) {
+      return {} as T;
+    }
+
     return response.json() as Promise<T>;
   }
 
@@ -60,10 +141,6 @@ export class CreemClient {
   // Checkouts
   // ---------------------------------------------------------------------------
 
-  /**
-   * POST /v1/checkouts
-   * Creates a new checkout session for the given product.
-   */
   async createCheckoutSession(
     options: CreemCheckoutOptions
   ): Promise<CreemCheckoutSession> {
@@ -73,10 +150,6 @@ export class CreemClient {
     });
   }
 
-  /**
-   * GET /v1/checkouts?checkout_id={id}
-   * Retrieves an existing checkout session by its ID.
-   */
   async getCheckoutSession(checkoutId: string): Promise<CreemCheckoutSession> {
     return this.request<CreemCheckoutSession>(
       `/v1/checkouts?checkout_id=${encodeURIComponent(checkoutId)}`
@@ -87,20 +160,12 @@ export class CreemClient {
   // Subscriptions
   // ---------------------------------------------------------------------------
 
-  /**
-   * GET /v1/subscriptions?subscription_id={id}
-   * Retrieves a subscription by its ID.
-   */
   async getSubscription(subscriptionId: string): Promise<CreemSubscription> {
     return this.request<CreemSubscription>(
       `/v1/subscriptions?subscription_id=${encodeURIComponent(subscriptionId)}`
     );
   }
 
-  /**
-   * POST /v1/subscriptions/{id}/cancel
-   * Cancels a subscription immediately or at the end of the billing period.
-   */
   async cancelSubscription(
     subscriptionId: string,
     options?: CreemCancelSubscriptionOptions
@@ -111,6 +176,209 @@ export class CreemClient {
         method: 'POST',
         body: JSON.stringify(options ?? {}),
       }
+    );
+  }
+
+  async updateSubscription(
+    subscriptionId: string,
+    options: CreemUpdateSubscriptionOptions
+  ): Promise<CreemSubscription> {
+    return this.request<CreemSubscription>(
+      `/v1/subscriptions/${encodeURIComponent(subscriptionId)}`,
+      {
+        method: 'POST',
+        body: JSON.stringify(options),
+      }
+    );
+  }
+
+  async upgradeSubscription(
+    subscriptionId: string,
+    options: CreemUpgradeSubscriptionOptions
+  ): Promise<CreemSubscription> {
+    return this.request<CreemSubscription>(
+      `/v1/subscriptions/${encodeURIComponent(subscriptionId)}/upgrade`,
+      {
+        method: 'POST',
+        body: JSON.stringify(options),
+      }
+    );
+  }
+
+  async pauseSubscription(subscriptionId: string): Promise<CreemSubscription> {
+    return this.request<CreemSubscription>(
+      `/v1/subscriptions/${encodeURIComponent(subscriptionId)}/pause`,
+      { method: 'POST' }
+    );
+  }
+
+  async resumeSubscription(subscriptionId: string): Promise<CreemSubscription> {
+    return this.request<CreemSubscription>(
+      `/v1/subscriptions/${encodeURIComponent(subscriptionId)}/resume`,
+      { method: 'POST' }
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Products
+  // ---------------------------------------------------------------------------
+
+  async getProduct(productId: string): Promise<CreemProduct> {
+    return this.request<CreemProduct>(
+      `/v1/products?product_id=${encodeURIComponent(productId)}`
+    );
+  }
+
+  async searchProducts(
+    page = 1,
+    pageSize = 10
+  ): Promise<CreemPaginatedResponse<CreemProduct>> {
+    return this.request<CreemPaginatedResponse<CreemProduct>>(
+      `/v1/products/search?page=${page}&page_size=${pageSize}`
+    );
+  }
+
+  async createProduct(
+    options: CreemCreateProductOptions
+  ): Promise<CreemProduct> {
+    return this.request<CreemProduct>('/v1/products', {
+      method: 'POST',
+      body: JSON.stringify(options),
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Customers
+  // ---------------------------------------------------------------------------
+
+  async getCustomer(customerId: string): Promise<CreemCustomer> {
+    return this.request<CreemCustomer>(
+      `/v1/customers?customer_id=${encodeURIComponent(customerId)}`
+    );
+  }
+
+  async getCustomerByEmail(email: string): Promise<CreemCustomer> {
+    return this.request<CreemCustomer>(
+      `/v1/customers?email=${encodeURIComponent(email)}`
+    );
+  }
+
+  async listCustomers(
+    page = 1,
+    pageSize = 10
+  ): Promise<CreemPaginatedResponse<CreemCustomer>> {
+    return this.request<CreemPaginatedResponse<CreemCustomer>>(
+      `/v1/customers/list?page=${page}&page_size=${pageSize}`
+    );
+  }
+
+  async generateCustomerPortalLink(
+    customerId: string
+  ): Promise<CreemBillingPortalResult> {
+    return this.request<CreemBillingPortalResult>('/v1/customers/billing', {
+      method: 'POST',
+      body: JSON.stringify({ customer_id: customerId }),
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Licenses
+  // ---------------------------------------------------------------------------
+
+  async activateLicense(
+    options: CreemActivateLicenseOptions
+  ): Promise<CreemLicenseActivationResult> {
+    return this.request<CreemLicenseActivationResult>(
+      '/v1/licenses/activate',
+      {
+        method: 'POST',
+        body: JSON.stringify(options),
+      }
+    );
+  }
+
+  async validateLicense(
+    options: CreemValidateLicenseOptions
+  ): Promise<CreemLicenseValidationResult> {
+    return this.request<CreemLicenseValidationResult>(
+      '/v1/licenses/validate',
+      {
+        method: 'POST',
+        body: JSON.stringify(options),
+      }
+    );
+  }
+
+  async deactivateLicense(
+    options: CreemDeactivateLicenseOptions
+  ): Promise<CreemLicenseValidationResult> {
+    return this.request<CreemLicenseValidationResult>(
+      '/v1/licenses/deactivate',
+      {
+        method: 'POST',
+        body: JSON.stringify(options),
+      }
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Discounts
+  // ---------------------------------------------------------------------------
+
+  async getDiscount(discountId: string): Promise<CreemDiscount> {
+    return this.request<CreemDiscount>(
+      `/v1/discounts?discount_id=${encodeURIComponent(discountId)}`
+    );
+  }
+
+  async getDiscountByCode(code: string): Promise<CreemDiscount> {
+    return this.request<CreemDiscount>(
+      `/v1/discounts?discount_code=${encodeURIComponent(code)}`
+    );
+  }
+
+  async createDiscount(
+    options: CreemCreateDiscountOptions
+  ): Promise<CreemDiscount> {
+    return this.request<CreemDiscount>('/v1/discounts', {
+      method: 'POST',
+      body: JSON.stringify(options),
+    });
+  }
+
+  async deleteDiscount(discountId: string): Promise<void> {
+    await this.request<void>(
+      `/v1/discounts/${encodeURIComponent(discountId)}/delete`,
+      { method: 'DELETE' }
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Transactions
+  // ---------------------------------------------------------------------------
+
+  async getTransaction(transactionId: string): Promise<CreemTransaction> {
+    return this.request<CreemTransaction>(
+      `/v1/transactions?transaction_id=${encodeURIComponent(transactionId)}`
+    );
+  }
+
+  async searchTransactions(
+    customerId?: string,
+    orderId?: string,
+    productId?: string,
+    page = 1,
+    pageSize = 50
+  ): Promise<CreemPaginatedResponse<CreemTransaction>> {
+    const params = new URLSearchParams();
+    if (customerId) params.set('customer_id', customerId);
+    if (orderId) params.set('order_id', orderId);
+    if (productId) params.set('product_id', productId);
+    params.set('page', String(page));
+    params.set('page_size', String(pageSize));
+
+    return this.request<CreemPaginatedResponse<CreemTransaction>>(
+      `/v1/transactions/search?${params.toString()}`
     );
   }
 }
@@ -139,14 +407,6 @@ export function getCreemClient(): CreemClient {
 // Browser helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Opens the checkout URL via expo-web-browser and waits for the deep-link
- * redirect back into the app.
- *
- * @param session   The checkout session returned by createCheckoutSession.
- * @param redirectUrl  The deep-link URL that Creem will redirect to after
- *                     checkout (e.g. `myapp://creem/callback`).
- */
 export async function launchCheckout(
   session: CreemCheckoutSession,
   redirectUrl: string
@@ -170,7 +430,6 @@ export async function launchCheckout(
     const parsed = new URL(result.url);
     const params = parsed.searchParams;
 
-    // Creem may append ?status=canceled when the user closes the modal
     if (params.get('status') === 'canceled' || parsed.pathname.includes('cancel')) {
       return { status: 'canceled' };
     }
@@ -196,12 +455,6 @@ export async function launchCheckout(
 // Deep-link helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Builds a deep-link URL for use as success_url / cancel redirect.
- *
- * @param path    Relative path, e.g. `'creem/success'`
- * @param params  Additional query parameters to append.
- */
 export function buildCallbackUrl(
   path: string,
   params: Record<string, string> = {}
@@ -211,12 +464,12 @@ export function buildCallbackUrl(
   return qs ? `${base}?${qs}` : base;
 }
 
-/**
- * Parses a deep-link callback URL and extracts checkout outcome information.
- */
 export function parseCallbackUrl(url: string): {
   status: 'completed' | 'canceled' | 'pending';
   sessionId?: string;
+  orderId?: string;
+  customerId?: string;
+  productId?: string;
   error?: string;
 } {
   const parsed = new URL(url);
@@ -228,6 +481,9 @@ export function parseCallbackUrl(url: string): {
       status: 'completed',
       sessionId:
         params.get('checkout_id') || params.get('session_id') || undefined,
+      orderId: params.get('order_id') || undefined,
+      customerId: params.get('customer_id') || undefined,
+      productId: params.get('product_id') || undefined,
     };
   }
 
@@ -246,11 +502,6 @@ export function parseCallbackUrl(url: string): {
   return { status: 'pending' };
 }
 
-/**
- * Basic API key validation — checks the key is a non-empty string.
- * The actual key format is not publicly documented by Creem, so we only
- * guard against obviously invalid values.
- */
 export function validateApiKey(apiKey: string): boolean {
   return typeof apiKey === 'string' && apiKey.trim().length > 0;
 }

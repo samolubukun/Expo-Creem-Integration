@@ -4,6 +4,10 @@
  * Automatically configures URL scheme handling so that the Creem checkout
  * browser can redirect back into your app after payment.
  *
+ * Supports:
+ * - iOS: URL scheme registration in Info.plist
+ * - Android: Intent filter for deep links in AndroidManifest.xml
+ *
  * Usage in app.json / app.config.js:
  *
  *   "plugins": [
@@ -11,31 +15,15 @@
  *   ]
  *
  * If you omit the scheme option, the plugin reads `expo.scheme` from your
- * existing app config (the top-level scheme Expo already sets up).
- * No manual Info.plist / AndroidManifest.xml edits are needed.
+ * existing app config.
  */
 
-// expo/config-plugins is a peer dependency of expo — always available in
-// an Expo managed workflow project.
-const { withAppDelegate, withAndroidManifest, withInfoPlist } =
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  require('@expo/config-plugins') as typeof import('@expo/config-plugins');
-
-interface CreemPluginOptions {
-  /**
-   * The URL scheme your app uses for deep linking.
-   * Defaults to the top-level `scheme` in your app config.
-   */
-  scheme?: string;
-}
+const { withInfoPlist, withAndroidManifest } = require('@expo/config-plugins');
 
 // ---------------------------------------------------------------------------
-// iOS — Info.plist
+// iOS — Info.plist URL scheme registration
 // ---------------------------------------------------------------------------
-function withCreemIos(
-  config: Parameters<typeof withInfoPlist>[0],
-  scheme: string
-): ReturnType<typeof withInfoPlist> {
+function withCreemIos(config, scheme) {
   return withInfoPlist(config, (c) => {
     const plist = c.modResults;
 
@@ -44,15 +32,14 @@ function withCreemIos(
     }
 
     // Only add if not already present to stay idempotent.
-    const alreadyRegistered = (plist.CFBundleURLTypes as Array<{
-      CFBundleURLSchemes?: string[];
-    }>).some((entry) => entry.CFBundleURLSchemes?.includes(scheme));
+    const alreadyRegistered = plist.CFBundleURLTypes.some(
+      (entry) =>
+        Array.isArray(entry.CFBundleURLSchemes) &&
+        entry.CFBundleURLSchemes.includes(scheme)
+    );
 
     if (!alreadyRegistered) {
-      (plist.CFBundleURLTypes as Array<{
-        CFBundleTypeRole: string;
-        CFBundleURLSchemes: string[];
-      }>).push({
+      plist.CFBundleURLTypes.push({
         CFBundleTypeRole: 'Editor',
         CFBundleURLSchemes: [scheme],
       });
@@ -63,28 +50,19 @@ function withCreemIos(
 }
 
 // ---------------------------------------------------------------------------
-// Android — AndroidManifest.xml
+// Android — AndroidManifest.xml intent filter for deep links
 // ---------------------------------------------------------------------------
-function withCreemAndroid(
-  config: Parameters<typeof withAndroidManifest>[0],
-  scheme: string
-): ReturnType<typeof withAndroidManifest> {
+function withCreemAndroid(config, scheme) {
   return withAndroidManifest(config, (c) => {
     const manifest = c.modResults;
-    const mainApp = manifest.manifest.application?.[0];
+    const mainApp = manifest.manifest.application && manifest.manifest.application[0];
     if (!mainApp) return c;
 
     // Find the main activity.
-    const mainActivity = (
-      mainApp.activity as Array<{
-        $: { 'android:name': string };
-        'intent-filter'?: Array<{
-          action?: Array<{ $: { 'android:name': string } }>;
-          category?: Array<{ $: { 'android:name': string } }>;
-          data?: Array<{ $: { 'android:scheme': string } }>;
-        }>;
-      }>
-    )?.find((a) => a.$['android:name'] === '.MainActivity');
+    const activities = mainApp.activity || [];
+    const mainActivity = activities.find(
+      (a) => a.$ && a.$['android:name'] === '.MainActivity'
+    );
 
     if (!mainActivity) return c;
 
@@ -94,7 +72,7 @@ function withCreemAndroid(
 
     // Check if the scheme filter already exists.
     const alreadyRegistered = mainActivity['intent-filter'].some((filter) =>
-      filter.data?.some((d) => d.$['android:scheme'] === scheme)
+      (filter.data || []).some((d) => d.$['android:scheme'] === scheme)
     );
 
     if (!alreadyRegistered) {
@@ -104,7 +82,14 @@ function withCreemAndroid(
           { $: { 'android:name': 'android.intent.category.DEFAULT' } },
           { $: { 'android:name': 'android.intent.category.BROWSABLE' } },
         ],
-        data: [{ $: { 'android:scheme': scheme } }],
+        data: [
+          {
+            $: {
+              'android:scheme': scheme,
+              'android:host': '*',
+            },
+          },
+        ],
       });
     }
 
@@ -115,15 +100,10 @@ function withCreemAndroid(
 // ---------------------------------------------------------------------------
 // Plugin entry point
 // ---------------------------------------------------------------------------
-const withCreem = (
-  config: Parameters<typeof withAppDelegate>[0],
-  options: CreemPluginOptions = {}
-) => {
+const withCreem = (config, options = {}) => {
   const scheme =
     options.scheme ||
-    (Array.isArray((config as { scheme?: string | string[] }).scheme)
-      ? ((config as { scheme?: string[] }).scheme as string[])[0]
-      : (config as { scheme?: string }).scheme) ||
+    (Array.isArray(config.scheme) ? config.scheme[0] : config.scheme) ||
     'myapp';
 
   config = withCreemIos(config, scheme);

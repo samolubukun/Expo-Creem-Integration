@@ -9,6 +9,8 @@ import {
 export interface LaunchCheckoutParams {
   checkoutUrl: string;
   scheme: string;
+  /** Timeout in ms for deep-link fallback. Default: 30000 (30s). */
+  timeout?: number;
 }
 
 export interface LaunchCheckoutResult {
@@ -18,6 +20,8 @@ export interface LaunchCheckoutResult {
     orderId?: string;
     customerId?: string;
     productId?: string;
+    subscriptionId?: string;
+    requestId?: string;
     url: string;
   };
   error?: CreemError;
@@ -26,7 +30,7 @@ export interface LaunchCheckoutResult {
 export async function launchCheckoutSession(
   params: LaunchCheckoutParams
 ): Promise<LaunchCheckoutResult> {
-  const { checkoutUrl, scheme } = params;
+  const { checkoutUrl, scheme, timeout = 30_000 } = params;
   const redirectUrl = `${scheme}://`;
 
   const deepLinkPromise = new Promise<string | null>((resolve) => {
@@ -55,7 +59,7 @@ export async function launchCheckoutSession(
     if (browserResult.type === 'opened') {
       const url = await Promise.race([
         deepLinkPromise,
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 30_000)),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), timeout)),
       ]);
 
       if (url) {
@@ -95,6 +99,8 @@ function parseSuccessUrl(url: string): {
   orderId?: string;
   customerId?: string;
   productId?: string;
+  subscriptionId?: string;
+  requestId?: string;
   url: string;
 } {
   try {
@@ -106,6 +112,8 @@ function parseSuccessUrl(url: string): {
       orderId: (q['order_id'] as string) ?? undefined,
       customerId: (q['customer_id'] as string) ?? undefined,
       productId: (q['product_id'] as string) ?? undefined,
+      subscriptionId: (q['subscription_id'] as string) ?? undefined,
+      requestId: (q['request_id'] as string) ?? undefined,
       url,
     };
   } catch {

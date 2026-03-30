@@ -9,6 +9,12 @@ export interface CreemConfig {
   environment?: CreemEnvironment;
   /** Override the base URL (e.g. for proxying through your own backend). */
   baseUrl?: string;
+  /** Custom fetch implementation (for testing or proxy). */
+  customFetch?: typeof fetch;
+  /** Number of retries for failed requests. Default: 2. */
+  retries?: number;
+  /** Base delay in ms for retry backoff. Default: 300. */
+  retryDelay?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -32,6 +38,7 @@ export type SubscriptionStatus =
   | 'active'
   | 'canceled'
   | 'unpaid'
+  | 'past_due'
   | 'paused'
   | 'trialing'
   | 'scheduled_cancel';
@@ -39,8 +46,8 @@ export type SubscriptionStatus =
 /** Billing type for products. */
 export type BillingType = 'one_time' | 'recurring';
 
-/** Billing period for recurring products. */
-export type BillingPeriod = 'day' | 'week' | 'month' | 'year';
+/** Billing period for recurring products. Source: Creem API — ProductEntity.billing_period */
+export type BillingPeriod = 'every-day' | 'every-week' | 'every-month' | 'every-year';
 
 /** Product status. */
 export type ProductStatus = 'active' | 'archived';
@@ -51,14 +58,19 @@ export type TaxMode = 'inclusive' | 'exclusive';
 /** Order type. */
 export type OrderType = 'checkout' | 'renewal' | 'upgrade' | 'downgrade';
 
+/** License status. */
+export type LicenseStatus = 'active' | 'inactive' | 'expired' | 'disabled';
+
+/** Subscription update behavior for proration. */
+export type UpdateBehavior =
+  | 'proration-charge-immediately'
+  | 'proration-charge'
+  | 'proration-none';
+
 // ---------------------------------------------------------------------------
 // Custom fields (request & response)
 // ---------------------------------------------------------------------------
 
-/**
- * Custom field as sent in a checkout creation request.
- * Source: Creem API — CustomFieldRequestEntity
- */
 export interface CreemCustomFieldRequest {
   type: 'text' | 'checkbox';
   key: string;
@@ -74,10 +86,6 @@ export interface CreemCustomFieldRequest {
   };
 }
 
-/**
- * Custom field as returned in a checkout response.
- * Source: Creem API — CustomFieldResponseEntity
- */
 export interface CreemCustomFieldResponse {
   type: 'text' | 'checkbox';
   key: string;
@@ -99,10 +107,6 @@ export interface CreemCustomFieldResponse {
 // Nested entity shapes returned by the API
 // ---------------------------------------------------------------------------
 
-/**
- * Customer entity returned by the Creem API.
- * Source: Creem API — CustomerEntity
- */
 export interface CreemCustomer {
   id: string;
   mode?: CreemMode;
@@ -114,18 +118,11 @@ export interface CreemCustomer {
   updated_at?: string;
 }
 
-/**
- * Product feature entry.
- */
 export interface CreemProductFeature {
   name: string;
   slug?: string;
 }
 
-/**
- * Product entity returned by the Creem API.
- * Source: Creem API — ProductEntity
- */
 export interface CreemProduct {
   id: string;
   mode?: CreemMode;
@@ -148,10 +145,6 @@ export interface CreemProduct {
   updated_at?: string;
 }
 
-/**
- * Discount entity returned by the Creem API.
- * Source: Creem API — DiscountEntity
- */
 export interface CreemDiscount {
   id: string;
   mode?: CreemMode;
@@ -159,18 +152,16 @@ export interface CreemDiscount {
   code?: string;
   type?: 'percentage' | 'fixed';
   amount?: number;
+  percentage?: number;
   duration?: 'once' | 'repeating' | 'forever';
   duration_in_months?: number;
   max_redemptions?: number;
   times_redeemed?: number;
+  applies_to_products?: string[];
   created_at?: string;
   updated_at?: string;
 }
 
-/**
- * Transaction entity returned by the Creem API.
- * Source: Creem API — TransactionEntity
- */
 export interface CreemTransaction {
   id: string;
   mode?: CreemMode;
@@ -178,14 +169,14 @@ export interface CreemTransaction {
   status?: string;
   amount?: number;
   currency?: string;
+  type?: string;
+  customer?: string | CreemCustomer;
+  product?: string | CreemProduct;
+  order?: string | CreemOrder;
   created_at?: string;
   updated_at?: string;
 }
 
-/**
- * Order entity returned by the Creem API.
- * Source: Creem API — OrderEntity
- */
 export interface CreemOrder {
   id: string;
   mode?: CreemMode;
@@ -211,24 +202,23 @@ export interface CreemOrder {
   updated_at?: string;
 }
 
-/**
- * License key entity returned in checkout responses.
- * Source: Creem API — LicenseKeyEntity
- */
 export interface CreemLicenseKey {
   id: string;
   key: string;
-  status?: string;
+  status?: LicenseStatus;
   activation_limit?: number;
   activation_count?: number;
   created_at?: string;
   updated_at?: string;
 }
 
-/**
- * Subscription item entity.
- * Source: Creem API — SubscriptionItemEntity
- */
+export interface CreemLicenseInstance {
+  id: string;
+  instance_name?: string;
+  status?: LicenseStatus;
+  activated_at?: string;
+}
+
 export interface CreemSubscriptionItem {
   id: string;
   product: string | CreemProduct;
@@ -243,42 +233,20 @@ export interface CreemSubscriptionItem {
 // Checkout
 // ---------------------------------------------------------------------------
 
-/**
- * Request body for POST /v1/checkouts.
- * All field names are snake_case as required by the Creem API.
- */
 export interface CreemCheckoutOptions {
-  /** Required. The product to check out. */
   product_id: string;
-  /** Optional idempotency key. */
   request_id?: string;
-  /** Number of units (quantity). */
   units?: number;
-  /** Pre-fill a discount code. */
   discount_code?: string;
-  /** Pre-fill customer info. Pass either id or email. */
   customer?: {
     id?: string;
     email?: string;
   };
-  /**
-   * Custom fields to attach to the checkout.
-   * Each entry defines a text or checkbox field the customer fills out.
-   */
   custom_fields?: CreemCustomFieldRequest[];
-  /** URL to redirect to on success. */
   success_url?: string;
-  /** Arbitrary metadata. */
   metadata?: Record<string, string>;
 }
 
-/**
- * Response from POST /v1/checkouts or GET /v1/checkouts?checkout_id=xxx.
- * Matches the Creem API CheckoutEntity shape.
- *
- * Note: `product`, `customer`, and `subscription` may be returned as either
- * a string ID or a full entity object depending on the API expand behaviour.
- */
 export interface CreemCheckoutSession {
   id: string;
   object: 'checkout';
@@ -303,42 +271,22 @@ export interface CreemCheckoutSession {
 // Subscription
 // ---------------------------------------------------------------------------
 
-/**
- * Response from GET /v1/subscriptions?subscription_id=xxx or
- * POST /v1/subscriptions/{id}/cancel.
- * Matches the Creem API SubscriptionEntity shape.
- *
- * Note: `product` and `customer` may be returned as either a string ID or a
- * full entity object depending on the API expand behaviour.
- */
 export interface CreemSubscription {
   id: string;
   object: 'subscription';
   mode?: CreemMode;
   status: SubscriptionStatus;
-  /** May be a string ID or the full product entity. */
   product: string | CreemProduct;
-  /** May be a string ID or the full customer entity. */
   customer: string | CreemCustomer;
-  /** Subscription line items. */
   items?: CreemSubscriptionItem[];
-  /** How the subscription is billed. */
   collection_method?: 'charge_automatically';
-  /** ID of the most recent transaction. */
   last_transaction_id?: string;
-  /** The most recent transaction entity (when expanded). */
   last_transaction?: string | CreemTransaction;
-  /** ISO-8601 date of the most recent transaction. */
   last_transaction_date?: string;
-  /** ISO-8601 date of the next upcoming transaction. */
   next_transaction_date?: string;
-  /** ISO-8601 date string */
   current_period_start_date?: string;
-  /** ISO-8601 date string */
   current_period_end_date?: string;
-  /** ISO-8601 date string — present when the subscription has been canceled */
   canceled_at?: string;
-  /** Discount applied to this subscription. */
   discount?: string | CreemDiscount;
   units?: number;
   metadata?: Record<string, string>;
@@ -346,21 +294,102 @@ export interface CreemSubscription {
   updated_at?: string;
 }
 
-/**
- * Request body for POST /v1/subscriptions/{id}/cancel.
- */
 export interface CreemCancelSubscriptionOptions {
-  /** 'immediate' cancels right away; 'scheduled' cancels at period end. */
   mode?: 'immediate' | 'scheduled';
-  /** What to do when the cancellation executes. */
   onExecute?: 'cancel' | 'pause';
+}
+
+export interface CreemUpdateSubscriptionOptions {
+  items: Array<{ id: string; units: number }>;
+  update_behavior?: UpdateBehavior;
+}
+
+export interface CreemUpgradeSubscriptionOptions {
+  product_id: string;
+  update_behavior?: UpdateBehavior;
+}
+
+// ---------------------------------------------------------------------------
+// License management
+// ---------------------------------------------------------------------------
+
+export interface CreemActivateLicenseOptions {
+  key: string;
+  instance_name: string;
+}
+
+export interface CreemValidateLicenseOptions {
+  key: string;
+  instance_id: string;
+}
+
+export interface CreemDeactivateLicenseOptions {
+  key: string;
+  instance_id: string;
+}
+
+export interface CreemLicenseActivationResult {
+  instance: CreemLicenseInstance;
+  license: CreemLicenseKey;
+}
+
+export interface CreemLicenseValidationResult {
+  status: LicenseStatus;
+  instance: CreemLicenseInstance;
+  license: CreemLicenseKey;
+}
+
+// ---------------------------------------------------------------------------
+// Customer portal
+// ---------------------------------------------------------------------------
+
+export interface CreemBillingPortalResult {
+  customer_portal_link: string;
+}
+
+// ---------------------------------------------------------------------------
+// Discount management
+// ---------------------------------------------------------------------------
+
+export interface CreemCreateDiscountOptions {
+  name: string;
+  code?: string;
+  type: 'percentage' | 'fixed';
+  /** Percentage discount (1-100). Required when type is 'percentage'. */
+  percentage?: number;
+  /** Fixed amount in cents. Required when type is 'fixed'. */
+  amount?: number;
+  currency?: string;
+  duration?: 'once' | 'repeating' | 'forever';
+  duration_in_months?: number;
+  max_redemptions?: number;
+  applies_to_products?: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Product management
+// ---------------------------------------------------------------------------
+
+export interface CreemCreateProductOptions {
+  name: string;
+  description?: string;
+  price: number;
+  currency: string;
+  billing_type: BillingType;
+  billing_period?: BillingPeriod;
+  image_url?: string;
+  tax_mode?: TaxMode;
+  tax_category?: string;
+  product_url?: string;
+  default_success_url?: string;
+  features?: CreemProductFeature[];
+  custom_fields?: CreemCustomFieldRequest[];
 }
 
 // ---------------------------------------------------------------------------
 // Webhook events
 // ---------------------------------------------------------------------------
 
-/** All known Creem webhook event types. */
 export type CreemWebhookEventType =
   | 'checkout.completed'
   | 'subscription.active'
@@ -375,14 +404,23 @@ export type CreemWebhookEventType =
   | 'refund.created'
   | 'dispute.created';
 
-/**
- * Webhook event payload envelope.
- */
 export interface CreemWebhookEvent<T = unknown> {
   id: string;
-  event_type: CreemWebhookEventType;
-  data: T;
-  created_at: string;
+  eventType: CreemWebhookEventType;
+  object: T;
+  created_at?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Pagination
+// ---------------------------------------------------------------------------
+
+export interface CreemPaginatedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -420,10 +458,33 @@ export interface UseCreemCheckoutOptions extends CreemCheckoutOptions {
   onError?: CheckoutErrorCallback;
   /** How to present the browser. Defaults to 'browser' (expo-web-browser). */
   presentationStyle?: 'browser';
+  /** Auto-close delay in ms after checkout completes. Default: 0. */
+  autoCloseDelay?: number;
 }
 
 export interface UseCreemSubscriptionOptions {
   /** Poll the API every N milliseconds. 0 = no polling. */
   pollInterval?: number;
   onStatusChange?: (status: SubscriptionStatus) => void;
+  /** Enable/disable the subscription fetch. Default: true. */
+  enabled?: boolean;
+}
+
+export interface UseCreemProductsOptions {
+  /** Page number. Default: 1. */
+  page?: number;
+  /** Items per page. Default: 10. */
+  pageSize?: number;
+  /** Enable/disable fetching. Default: true. */
+  enabled?: boolean;
+  /** Poll interval in ms. 0 = no polling. */
+  pollInterval?: number;
+}
+
+export interface UseCreemLicenseOptions {
+  /** Enable/disable the license fetch. Default: true. */
+  enabled?: boolean;
+  /** Poll interval in ms. 0 = no polling. */
+  pollInterval?: number;
+  onStatusChange?: (status: LicenseStatus) => void;
 }

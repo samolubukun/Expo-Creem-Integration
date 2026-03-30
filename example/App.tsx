@@ -8,13 +8,22 @@ import {
   TextInput,
   Alert,
   StatusBar,
+  TouchableOpacity,
+  Switch,
 } from 'react-native';
 import * as Linking from 'expo-linking';
 import {
   CreemProvider,
   CreemCheckoutButton,
   SubscriptionStatus as SubscriptionStatusComponent,
+  SubscriptionBadge,
   useCreemCheckoutWithDeeplink,
+  useCreemSubscription,
+  useCreemCustomerPortal,
+  useCreemLicense,
+  formatPrice,
+  formatDate,
+  isSubscriptionActive,
 } from 'expo-creem';
 
 // ---------------------------------------------------------------------------
@@ -24,14 +33,15 @@ const CREEM_API_KEY = process.env.EXPO_PUBLIC_CREEM_API_KEY ?? 'YOUR_API_KEY_HER
 const PRODUCT_ID = process.env.EXPO_PUBLIC_PRODUCT_ID ?? 'YOUR_PRODUCT_ID_HERE';
 
 // ---------------------------------------------------------------------------
-// CheckoutScreen
+// CheckoutScreen — full demo of all features
 // ---------------------------------------------------------------------------
 function CheckoutScreen(): React.JSX.Element {
   const [customerEmail, setCustomerEmail] = useState('');
   const [subscriptionIdInput, setSubscriptionIdInput] = useState('');
   const [lastSessionId, setLastSessionId] = useState<string | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
-  // useCreemCheckoutWithDeeplink listens for the deep-link redirect from Creem.
+  // Checkout with deep link listener
   const checkoutResult = useCreemCheckoutWithDeeplink({
     product_id: PRODUCT_ID,
     customer: customerEmail ? { email: customerEmail } : undefined,
@@ -49,15 +59,23 @@ function CheckoutScreen(): React.JSX.Element {
     },
   });
 
+  // Customer portal
+  const { openPortal, isLoading: portalLoading } = useCreemCustomerPortal(
+    customerEmail || null
+  );
+
+  // License management
+  const { license, status: licenseStatus, isLoading: licenseLoading, validate, activate } = useCreemLicense();
+
   return (
     <ScrollView
       style={styles.scroll}
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={styles.title}>expo-creem Demo</Text>
+      <Text style={styles.title}>expo-creem</Text>
       <Text style={styles.subtitle}>
-        Test the Creem checkout flow in your Expo app
+        Full-featured Creem payment integration for Expo
       </Text>
 
       {/* ------------------------------------------------------------------ */}
@@ -107,14 +125,27 @@ function CheckoutScreen(): React.JSX.Element {
             success_url: 'creemexample://creem/success',
           }}
           title="Subscribe Now"
-          loadingTitle="Opening checkout…"
+          loadingTitle="Opening checkout..."
           variant="primary"
           size="large"
           style={styles.checkoutButton}
         />
 
+        {/* Alternative checkout button */}
+        <CreemCheckoutButton
+          options={{
+            product_id: PRODUCT_ID,
+            customer: customerEmail ? { email: customerEmail } : undefined,
+            success_url: 'creemexample://creem/success',
+          }}
+          title="Buy with Outline Style"
+          variant="outline"
+          size="medium"
+          style={styles.checkoutButtonAlt}
+        />
+
         {checkoutResult.status === 'loading' && (
-          <Text style={styles.statusNote}>Opening checkout…</Text>
+          <Text style={styles.statusNote}>Opening checkout...</Text>
         )}
         {checkoutResult.status === 'success' && (
           <Text style={[styles.statusNote, styles.statusSuccess]}>
@@ -154,15 +185,41 @@ function CheckoutScreen(): React.JSX.Element {
           autoCorrect={false}
         />
 
+        {/* Badge component */}
+        {subscriptionIdInput ? (
+          <View style={{ marginTop: 12, marginBottom: 8 }}>
+            <SubscriptionBadge
+              subscriptionId={subscriptionIdInput || null}
+              pollInterval={30_000}
+              showLabel
+            />
+          </View>
+        ) : null}
+
         <SubscriptionStatusComponent
           subscriptionId={subscriptionIdInput || null}
           showDetails
+          pollInterval={30_000}
+          onStatusChange={(s) => console.log('Status changed:', s)}
           renderLoading={() => (
-            <Text style={styles.statusNote}>Loading subscription…</Text>
+            <Text style={styles.statusNote}>Loading subscription...</Text>
           )}
           renderInactive={() => (
             <View style={styles.inactiveBox}>
               <Text style={styles.inactiveText}>No active subscription</Text>
+            </View>
+          )}
+          renderTrialing={(subscription) => (
+            <View style={styles.trialBox}>
+              <Text style={styles.trialTitle}>Trial Period</Text>
+              <Text style={styles.detailText}>
+                Enjoy your free trial!
+              </Text>
+              {subscription.current_period_end_date && (
+                <Text style={styles.detailText}>
+                  Trial ends: {formatDate(subscription.current_period_end_date)}
+                </Text>
+              )}
             </View>
           )}
           renderActive={(subscription) => (
@@ -179,15 +236,90 @@ function CheckoutScreen(): React.JSX.Element {
                   {subscription.status === 'scheduled_cancel'
                     ? 'Cancels: '
                     : 'Renews: '}
-                  {new Date(
-                    subscription.current_period_end_date
-                  ).toLocaleDateString()}
+                  {formatDate(subscription.current_period_end_date)}
+                </Text>
+              )}
+              {typeof subscription.product === 'object' && subscription.product?.price != null && (
+                <Text style={styles.detailText}>
+                  Price: {formatPrice(subscription.product.price, subscription.product.currency)}
+                </Text>
+              )}
+            </View>
+          )}
+          renderCanceling={(subscription) => (
+            <View style={styles.cancelingBox}>
+              <Text style={styles.cancelingTitle}>Subscription Ending</Text>
+              <Text style={styles.detailText}>
+                Your subscription will end at the current billing period.
+              </Text>
+              {subscription.current_period_end_date && (
+                <Text style={styles.detailText}>
+                  Ends: {formatDate(subscription.current_period_end_date)}
                 </Text>
               )}
             </View>
           )}
         />
       </View>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Customer Portal card                                                 */}
+      {/* ------------------------------------------------------------------ */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Customer Portal</Text>
+        <Text style={styles.description}>
+          Open the Creem customer portal to manage billing, payment methods, and
+          invoices.
+        </Text>
+        <TouchableOpacity
+          style={styles.portalButton}
+          onPress={openPortal}
+          disabled={portalLoading || !customerEmail}
+        >
+          <Text style={styles.portalButtonText}>
+            {portalLoading ? 'Opening...' : 'Open Billing Portal'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Advanced features toggle                                             */}
+      {/* ------------------------------------------------------------------ */}
+      <View style={styles.card}>
+        <View style={styles.toggleRow}>
+          <Text style={styles.cardTitle}>Advanced Features</Text>
+          <Switch
+            value={showAdvanced}
+            onValueChange={setShowAdvanced}
+            trackColor={{ false: '#E5E5EA', true: '#34C759' }}
+          />
+        </View>
+      </View>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* License Management card (advanced)                                   */}
+      {/* ------------------------------------------------------------------ */}
+      {showAdvanced && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>License Management</Text>
+          <Text style={styles.description}>
+            Activate, validate, and deactivate software licenses powered by
+            Creem.
+          </Text>
+
+          {license && (
+            <View style={styles.licenseInfo}>
+              <Text style={styles.detailText}>License Key: {license.key}</Text>
+              <Text style={styles.detailText}>Status: {licenseStatus ?? 'Unknown'}</Text>
+              {license.activation_count != null && (
+                <Text style={styles.detailText}>
+                  Activations: {license.activation_count}/{license.activation_limit ?? '∞'}
+                </Text>
+              )}
+            </View>
+          )}
+        </View>
+      )}
 
       {/* ------------------------------------------------------------------ */}
       {/* Deep link reference                                                  */}
@@ -227,7 +359,7 @@ export default function App(): React.JSX.Element {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.center}>
-          <Text>Loading…</Text>
+          <Text>Loading...</Text>
         </View>
       </SafeAreaView>
     );
@@ -320,6 +452,9 @@ const styles = StyleSheet.create({
   checkoutButton: {
     marginTop: 4,
   },
+  checkoutButtonAlt: {
+    marginTop: 10,
+  },
   statusNote: {
     fontSize: 13,
     color: '#8E8E93',
@@ -360,9 +495,53 @@ const styles = StyleSheet.create({
     color: '#34C759',
     marginBottom: 8,
   },
+  trialBox: {
+    padding: 14,
+    backgroundColor: '#EDE7F6',
+    borderRadius: 10,
+  },
+  trialTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#5856D6',
+    marginBottom: 8,
+  },
+  cancelingBox: {
+    padding: 14,
+    backgroundColor: '#FFF3E0',
+    borderRadius: 10,
+  },
+  cancelingTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FF9500',
+    marginBottom: 8,
+  },
   detailText: {
     fontSize: 13,
     color: '#3C3C43',
     marginTop: 3,
+  },
+  portalButton: {
+    backgroundColor: '#5856D6',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+  },
+  portalButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  licenseInfo: {
+    padding: 14,
+    backgroundColor: '#F5F5F7',
+    borderRadius: 10,
   },
 });
