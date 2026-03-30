@@ -9,6 +9,16 @@ import {
   CheckoutResult,
 } from '../types';
 
+function normalizeCreemError(err: unknown): CreemError {
+  if (typeof err === 'object' && err !== null && 'code' in err && 'message' in err) {
+    return err as CreemError;
+  }
+  return {
+    code: 'UNKNOWN_ERROR',
+    message: err instanceof Error ? err.message : String(err),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Internal state shape
 // ---------------------------------------------------------------------------
@@ -94,7 +104,7 @@ export function useCreemCheckout(
         onError?.(error);
       }
     } catch (err) {
-      const error = err as CreemError;
+      const error = normalizeCreemError(err);
       setState({ status: 'error', session: null, error });
       onError?.(error);
     }
@@ -202,7 +212,7 @@ export function useCreemCheckoutWithDeeplink(
       // Fire and forget — result comes via the deep-link listener above.
       await launchCheckout(session, redirectUrl);
     } catch (err) {
-      const error = err as CreemError;
+      const error = normalizeCreemError(err);
       setState({ status: 'error', session: null, error });
       optionsRef.current.onError?.(error);
     }

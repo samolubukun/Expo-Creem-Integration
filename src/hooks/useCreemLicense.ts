@@ -10,6 +10,16 @@ import {
   CreemDeactivateLicenseOptions,
 } from '../types';
 
+function normalizeCreemError(err: unknown): CreemError {
+  if (typeof err === 'object' && err !== null && 'code' in err && 'message' in err) {
+    return err as CreemError;
+  }
+  return {
+    code: 'UNKNOWN_ERROR',
+    message: err instanceof Error ? err.message : String(err),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // State / return types
 // ---------------------------------------------------------------------------
@@ -61,7 +71,7 @@ export function useCreemLicense(): UseCreemLicenseReturn {
         setState((prev) => ({
           ...prev,
           isLoading: false,
-          error: err as CreemError,
+          error: normalizeCreemError(err),
         }));
       }
     },
@@ -86,7 +96,7 @@ export function useCreemLicense(): UseCreemLicenseReturn {
         setState((prev) => ({
           ...prev,
           isLoading: false,
-          error: err as CreemError,
+          error: normalizeCreemError(err),
         }));
       }
     },
@@ -110,7 +120,7 @@ export function useCreemLicense(): UseCreemLicenseReturn {
         setState((prev) => ({
           ...prev,
           isLoading: false,
-          error: err as CreemError,
+          error: normalizeCreemError(err),
         }));
       }
     },

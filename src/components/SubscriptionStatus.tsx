@@ -150,9 +150,9 @@ export const SubscriptionStatus = React.memo(function SubscriptionStatus({
           {typeof subscription.product === 'object' &&
             subscription.product?.billing_period && (
               <Text style={styles.detailText}>
-                {subscription.product.billing_period === 'month'
+                {subscription.product.billing_period === 'every-month'
                   ? 'Monthly'
-                  : subscription.product.billing_period === 'year'
+                  : subscription.product.billing_period === 'every-year'
                     ? 'Yearly'
                     : subscription.product.billing_period}
               </Text>

@@ -134,9 +134,12 @@ export function formatBillingPeriod(
 }
 
 /** Returns a human-readable relative time string (e.g., "in 3 days"). */
-export function formatRelativeTime(isoDate: string): string {
+export function formatRelativeTime(isoDate: string | undefined | null): string {
+  if (!isoDate) return '';
   const now = new Date();
   const target = new Date(isoDate);
+  if (isNaN(target.getTime())) return '';
+
   const diffMs = target.getTime() - now.getTime();
   const absDiff = Math.abs(diffMs);
   const isPast = diffMs < 0;
