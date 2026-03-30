@@ -2,6 +2,7 @@
 
 Creem payment integration for Expo apps. Launch checkout sessions, manage subscriptions, handle licenses, open customer portals, and handle deep-link callbacks — all without ejecting or writing native code.
 
+[![npm version](https://img.shields.io/npm/v/expo-creem-integration)](https://www.npmjs.com/package/expo-creem-integration)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Expo SDK](https://img.shields.io/badge/Expo%20SDK-52%2B-blue)](https://docs.expo.dev/)
 
@@ -32,21 +33,21 @@ Creem payment integration for Expo apps. Launch checkout sessions, manage subscr
 ## Installation
 
 ```bash
-npx expo install expo-creem expo-web-browser expo-linking
+npx expo install expo-creem-integration expo-web-browser expo-linking
 ```
 
 ## Setup
 
 ### 1. Add the config plugin
 
-In `app.json` / `app.config.js`, add `expo-creem` to the `plugins` array. The plugin automatically registers your URL scheme on iOS and Android so deep links from the Creem checkout page reach your app.
+In `app.json` / `app.config.js`, add `expo-creem-integration` to the `plugins` array. The plugin automatically registers your URL scheme on iOS and Android so deep links from the Creem checkout page reach your app.
 
 ```json
 {
   "expo": {
     "scheme": "myapp",
     "plugins": [
-      ["expo-creem", { "scheme": "myapp" }]
+      ["expo-creem-integration", { "scheme": "myapp" }]
     ]
   }
 }
@@ -59,7 +60,7 @@ Then run `expo prebuild` to apply the native changes.
 ### 2. Wrap your app with `<CreemProvider>`
 
 ```tsx
-import { CreemProvider } from 'expo-creem';
+import { CreemProvider } from 'expo-creem-integration';
 
 export default function App() {
   return (
@@ -89,7 +90,7 @@ Use `environment="sandbox"` for testing (points at `https://test-api.creem.io`) 
 ### Launch a checkout with the pre-built button
 
 ```tsx
-import { CreemCheckoutButton } from 'expo-creem';
+import { CreemCheckoutButton } from 'expo-creem-integration';
 
 <CreemCheckoutButton
   options={{
@@ -107,7 +108,7 @@ import { CreemCheckoutButton } from 'expo-creem';
 ### Launch a checkout with the hook
 
 ```tsx
-import { useCreemCheckout } from 'expo-creem';
+import { useCreemCheckout } from 'expo-creem-integration';
 
 function SubscribeButton() {
   const { status, error, startCheckout, reset } = useCreemCheckout({
@@ -133,7 +134,7 @@ function SubscribeButton() {
 `useCreemCheckoutWithDeeplink` opens the browser and then resolves via an incoming URL event rather than blocking. Useful with Expo Router or React Navigation.
 
 ```tsx
-import { useCreemCheckoutWithDeeplink } from 'expo-creem';
+import { useCreemCheckoutWithDeeplink } from 'expo-creem-integration';
 
 const { startCheckout, status } = useCreemCheckoutWithDeeplink({
   product_id: 'prod_xxx',
@@ -145,7 +146,7 @@ const { startCheckout, status } = useCreemCheckoutWithDeeplink({
 ### Show subscription status
 
 ```tsx
-import { SubscriptionStatus, SubscriptionBadge } from 'expo-creem';
+import { SubscriptionStatus, SubscriptionBadge } from 'expo-creem-integration';
 
 // Full status with custom renderers
 <SubscriptionStatus
@@ -169,7 +170,7 @@ import { SubscriptionStatus, SubscriptionBadge } from 'expo-creem';
 ### Manage subscriptions
 
 ```tsx
-import { useCreemSubscription } from 'expo-creem';
+import { useCreemSubscription } from 'expo-creem-integration';
 
 const { subscription, status, isLoading, cancelSubscription, updateSubscription, upgradeSubscription, pauseSubscription, resumeSubscription } =
   useCreemSubscription('sub_xxx');
@@ -200,7 +201,7 @@ await resumeSubscription();
 ### Browse products
 
 ```tsx
-import { useCreemProducts } from 'expo-creem';
+import { useCreemProducts } from 'expo-creem-integration';
 
 const { products, isLoading, hasMore, loadMore, refetch } = useCreemProducts({
   page: 1,
@@ -211,7 +212,7 @@ const { products, isLoading, hasMore, loadMore, refetch } = useCreemProducts({
 ### License key management
 
 ```tsx
-import { useCreemLicense } from 'expo-creem';
+import { useCreemLicense } from 'expo-creem-integration';
 
 const { license, status, isLoading, activate, validate, deactivate, reset } = useCreemLicense();
 
@@ -228,7 +229,7 @@ await deactivate({ key: 'license_key_here', instance_id: 'inst_xxx' });
 ### Customer portal
 
 ```tsx
-import { useCreemCustomerPortal } from 'expo-creem';
+import { useCreemCustomerPortal } from 'expo-creem-integration';
 
 const { openPortal, isLoading } = useCreemCustomerPortal('cust_xxx');
 
@@ -239,7 +240,7 @@ await openPortal();
 ### Utility helpers
 
 ```tsx
-import { formatPrice, formatDate, formatRelativeTime, isSubscriptionActive } from 'expo-creem';
+import { formatPrice, formatDate, formatRelativeTime, isSubscriptionActive } from 'expo-creem-integration';
 
 formatPrice(1999, 'USD');           // "$19.99"
 formatPrice(1999, 'EUR', 'de-DE');  // "19,99 €"
@@ -449,7 +450,7 @@ interface CreemUpgradeSubscriptionOptions {
 Use `CreemServerClient` in your Node.js / Edge backend to create checkout sessions without exposing your API key to clients.
 
 ```ts
-import { CreemServerClient } from 'expo-creem/server';
+import { CreemServerClient } from 'expo-creem-integration/server';
 
 const creem = new CreemServerClient({ apiKey: process.env.CREEM_API_KEY! });
 // or for the test environment:
@@ -490,7 +491,7 @@ await creem.searchTransactions('cust_xxx');
 ### Webhook verification
 
 ```ts
-import { validateWebhookSignature, parseWebhookEvent, processWebhookEvent } from 'expo-creem/server';
+import { validateWebhookSignature, parseWebhookEvent, processWebhookEvent } from 'expo-creem-integration/server';
 
 // Express example
 app.post('/webhooks/creem', express.raw({ type: 'application/json' }), (req, res) => {
@@ -551,7 +552,7 @@ npx expo start
 ## Architecture
 
 ```
-expo-creem/
+expo-creem-integration/
 ├── src/
 │   ├── types/             # All TypeScript definitions (25+ interfaces)
 │   ├── hooks/             # React hooks (6 hooks)
