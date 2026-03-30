@@ -1,6 +1,6 @@
 {
   "name": "expo-creem-integration",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Creem payment integration for Expo apps — checkout sessions, subscriptions, licenses, customer portal, and deep-link handling. Zero native code required.",
   "main": "src/index.ts",
   "types": "src/index.ts",
