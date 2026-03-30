@@ -2,7 +2,6 @@
 
 Creem payment integration for Expo apps. Launch checkout sessions, manage subscriptions, handle licenses, open customer portals, and handle deep-link callbacks — all without ejecting or writing native code.
 
-[![npm version](https://img.shields.io/npm/v/expo-creem)](https://www.npmjs.com/package/expo-creem)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Expo SDK](https://img.shields.io/badge/Expo%20SDK-52%2B-blue)](https://docs.expo.dev/)
 
